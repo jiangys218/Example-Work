@@ -1,0 +1,258 @@
+---
+title: "TS Assignment 6"
+author: "Yunshuang Jiang"
+date: "11/9/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+(5 points) Question 1: \n
+Load and plot the visitors dataset and plot the dataset with and without the Box Cox transformation. \n
+Describe the main dataset characteristics.
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+library(fpp)
+library(tseries)
+library(ggplot2)
+library(forecast)
+library(expsmooth)
+
+data(visitors)
+plot(visitors, ylab="Visitors", xlab="Year", main="Visitor Data without Transformation")
+tsdisplay(visitors, main= "Visitor Data without Transformation")
+#find the best lambda 
+best_lambda = BoxCox.lambda(visitors)
+plot(BoxCox(visitors, lambda = best_lambda), ylab="Visitors", xlab="Year", main= "Visitor Data with Box Cox Transformation")
+tsdisplay(visitors, main= "Visitor Data with Box Cox Transformation")
+```
+
+Comment: This time series consist of an upwarding/positive trend with strong seasonality (approximately quarterly) and no cyclic pattern observed. 
+
+\n
+
+(5 points) Question 2: \n
+Build two models using the entire visitors dataset \n
+a. Model 1: Let the auto.arima() function determine the best order 𝐴𝑅𝐼𝑀𝐴(𝑝, 𝑑, 𝑞)(𝑃,𝑄,𝐷)𝑠 model.
+```{r}
+#based on the plot, we know that there is seasonality and trend in the data, 
+#thus we set seasonal = true & allowdrift = true
+m1 <- auto.arima(visitors, allowdrift= TRUE, trace = TRUE, seasonal = TRUE)
+```
+
+
+b. Model 2: Let the ets() function determine the best model for exponential smoothing.
+```{r}
+m2 = ets(visitors)
+m2
+```
+
+(45 points) Question 3: \n
+In this section you will apply the time-series cross validation method to train and test various models. Use the following values when training and testing the models: \n
+• Set the minimum number of samples required to train the model to 160 (i.e., this is the minimum number of samples in the sliding window and the initial number of samples in the expanding window method.) \n
+• Set the number the forecast horizon, ℎ, to 1 year (i.e., 12 months.) \n
+• Recall that the period, 𝑝, is equal to 12 months\n
+• Use a single observation incrementation in each iteration (i.e., shift the training set forward by 1 observation.) \n
+• Note: You are expected to have 80 iterations of cross validation \n
+
+For each test window record the: \n 
+1) One-year forecast horizon error \n
+2) Estimated model AICc value \n
+
+For each iteration, apply the following 4 forecasts:\n 
+1) Use the Arima() function to estimate a sARIMA([1,0,1][0,1,2])12 with drift model for: \n
+a. Expanding training window \n
+b. Sliding training window \n
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+k <- 160 # minimum data length for fitting a model
+n <- length(visitors) # Number of data points
+
+p <- 12 ### Period
+H <- 12 # Forecast Horiz
+
+st <- tsp(visitors)[1]+(k-2)/p #  gives the start time in time units,
+
+mae_1 <- matrix(NA,n-k,H)
+mae_2 <- matrix(NA,n-k,H)
+rmse_1 <- matrix(NA,n-k,H)
+rmse_2 <- matrix(NA,n-k,H)
+aicc_1 <- matrix(NA,n-k,H)
+aicc_2 <- matrix(NA,n-k,H)
+
+
+for(i in 1:(n-k))
+{
+  
+  
+  ### One Month rolling forecasting
+  # Expanding Window 
+  train_1 <- window(visitors, end=st + i/p)  ## Window Length: k+i
+  
+  # Sliding Window - keep the training window of fixed length. 
+  # The training set always consists of k observations.
+  train_2 <- window(visitors, start=st+(i-k+1)/p, end=st+i/p) ## Window Length: k
+  
+  test <- window(visitors, start=st + (i+1)/p, end=st + (i+H)/p) ## Window Length: H
+
+  if (i<4) {
+  cat(c("*** CV", i,":","len(Expanding Window):",length(train_1), "len(Sliding Window):",length(train_2), "len(Test):",length(test),'\n'  ))
+  cat(c("*** TRAIN -  Expanding WIndow:",tsp(train_1)[1],'-',tsp(train_1)[2],'\n'))
+  cat(c("*** TRAIN - Sliding WIndow:",tsp(train_2)[1],'-',tsp(train_2)[2],'\n'))
+  cat(c("*** TEST:",tsp(test)[1],'-',tsp(test)[2],'\n'))
+  cat("*************************** \n \n")
+  }
+  
+  #when fitting the model, we will use drfit = True because we see obvious trend in the data
+  #we also set lambda = auto since we see that applying box cox transformation helps in stablizing the variance in part 1
+  fit_1 <- Arima(train_1, order=c(1,0,1), seasonal=list(order=c(0,1,2), period=p),
+                include.drift=TRUE, lambda="auto", method="ML")
+  fcast_1 <- forecast(fit_1, h=H)
+  
+  
+  fit_2 <- Arima(train_2, order=c(1,0,1), seasonal=list(order=c(0,1,2), period=p),
+                include.drift=TRUE, lambda="auto", method="ML")
+  fcast_2 <- forecast(fit_2, h=H)
+  
+  
+  mae_1[i,1:length(test)] <- abs(fcast_1[['mean']]-test)
+  mae_2[i,1:length(test)] <- abs(fcast_2[['mean']]-test)
+  rmse_1[i,1:length(test)] <- (fcast_1[["mean"]] - test)^2
+  rmse_2[i,1:length(test)] <- (fcast_2[["mean"]] - test)^2
+  aicc_1[i,1:length(test)] <- fit_1$aicc
+  aicc_2[i,1:length(test)] <- fit_2$aicc
+  
+}
+
+```
+
+2) Use the Exponential Smoothing function ets() to estimate a MAM (Multiplicative Error, Additive
+trend, multiplicative Season) model for: \n
+a. Expanding training window \n
+b. Sliding training window
+
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+
+mae_1est <- matrix(NA,n-k,H)
+mae_2est <- matrix(NA,n-k,H)
+rmse_1est <- matrix(NA,n-k,H)
+rmse_2est <- matrix(NA,n-k,H)
+aicc_1est <- matrix(NA,n-k,H)
+aicc_2set <- matrix(NA,n-k,H)
+
+
+for(i in 1:(n-k))
+{
+  
+  
+  ### One Month rolling forecasting
+  # Expanding Window 
+  train_1 <- window(visitors, end=st + i/p)  ## Window Length: k+i
+  
+  # Sliding Window - keep the training window of fixed length. 
+  # The training set always consists of k observations.
+  train_2 <- window(visitors, start=st+(i-k+1)/p, end=st+i/p) ## Window Length: k
+  
+  test <- window(visitors, start=st + (i+1)/p, end=st + (i+H)/p) ## Window Length: H
+
+  if (i<4) {
+  cat(c("*** CV", i,":","len(Expanding Window):",length(train_1), "len(Sliding Window):",length(train_2), "len(Test):",length(test),'\n'  ))
+  cat(c("*** TRAIN -  Expanding WIndow:",tsp(train_1)[1],'-',tsp(train_1)[2],'\n'))
+  cat(c("*** TRAIN - Sliding WIndow:",tsp(train_2)[1],'-',tsp(train_2)[2],'\n'))
+  cat(c("*** TEST:",tsp(test)[1],'-',tsp(test)[2],'\n'))
+  cat("*************************** \n \n")
+  }
+
+  
+  fit_1est <- ets(train_1)
+  fcast_1est <- forecast(fit_1est, h=H)
+  
+  fit_2est <- ets(train_2)
+  fcast_2est <- forecast(fit_2est, h=H)
+  
+  
+  mae_1est[i,1:length(test)] <- abs(fcast_1est[['mean']]-test)
+  mae_2est[i,1:length(test)] <- abs(fcast_2est[['mean']]-test)
+  rmse_1est[i,1:length(test)] <- (fcast_1est[["mean"]] - test)^2
+  rmse_2est[i,1:length(test)] <- (fcast_2est[["mean"]] - test)^2
+  aicc_1est[i,1:length(test)] <- fit_1est$aicc
+  aicc_2set[i,1:length(test)] <- fit_2est$aicc
+  
+}
+
+```
+
+
+For each of the four models above, calculate and plot the \n
+
+1) Mean Absolute Forecast Error (MAE) vs forecast horizon
+
+```{r}
+mae_df <- data.frame(c(mean(mae_1, na.rm=TRUE),mean(mae_2, na.rm=TRUE)),
+                     c(mean(mae_1est, na.rm=TRUE),mean(mae_2est, na.rm=TRUE)))
+colnames(mae_df) <- c("SARIMA","ETS")
+rownames(mae_df) <- c("Expanding Window", "Sliding Window")
+mae_df
+```
+
+```{r}
+plot(1:12, colMeans(mae_1,na.rm=TRUE), type="l",col=1, xlab="horizon", ylab="MAE" , ylim = c(15,35), main = "MAE vs forecast horizon")
+lines(1:12, colMeans(mae_2,na.rm=TRUE), type="l",col=2)
+lines(1:12, colMeans(mae_1est,na.rm=TRUE), type="l",col=3)
+lines(1:12, colMeans(mae_2est,na.rm=TRUE), type="l",col=4)
+legend("topleft",legend=c("SARIMA - Expanding Window","SARIMA - Sliding Window",
+                          "ETS - Expanding Window","ETS - Sliding Window"),col=1:5,lty=1)
+```
+
+2) Root-square Forecast Error (RMSE) vs forecast horizon
+
+```{r}
+rmse_df <- data.frame(c(sqrt(mean(rmse_1, na.rm=TRUE)),sqrt(mean(rmse_2, na.rm=TRUE))),
+                     c(sqrt(mean(rmse_1est, na.rm=TRUE)),sqrt(mean(rmse_2est, na.rm=TRUE))))
+colnames(rmse_df) <- c("SARIMA","ETS")
+rownames(rmse_df) <- c("Expanding Window", "Sliding Window")
+rmse_df
+```
+
+```{r}
+plot(1:12, sqrt(colMeans(rmse_1,na.rm=TRUE)), type="l",col=1, xlab="horizon", ylab="RMSE" , ylim = c(20,45), main = "RMSE vs forecast horizon")
+lines(1:12, sqrt(colMeans(rmse_2,na.rm=TRUE)), type="l",col=2)
+lines(1:12, sqrt(colMeans(rmse_1est,na.rm=TRUE)), type="l",col=3)
+lines(1:12, sqrt(colMeans(rmse_2est,na.rm=TRUE)), type="l",col=4)
+legend("bottomright",legend=c("SARIMA - Expanding Window","SARIMA - Sliding Window",
+                          "ETS - Expanding Window","ETS - Sliding Window"),col=1:5,lty=1)
+```
+
+3) AICc vs iteration number
+
+```{r}
+aicc_df <- data.frame(c(mean(aicc_1, na.rm=TRUE),mean(aicc_2, na.rm=TRUE)),
+                     c(mean(aicc_1est, na.rm=TRUE),mean(aicc_2set, na.rm=TRUE)))
+colnames(aicc_df) <- c("SARIMA","ETS")
+rownames(aicc_df) <- c("Expanding Window", "Sliding Window")
+aicc_df
+```
+
+```{r}
+plot(aicc_1[,1], type="l",col=1, xlab="iteration number", ylab="AICc" , ylim = c(-2000,3000), main = "AICc vs iteration number")
+lines(aicc_2[,1], type="l",col=2)
+lines(aicc_1est[,1], type="l",col=3)
+lines(aicc_2set[,1], type="l",col=4)
+legend("bottomleft",legend=c("SARIMA - Expanding Window","SARIMA - Sliding Window",
+                          "ETS - Expanding Window","ETS - Sliding Window"),col=1:5,lty=1)
+```
+
+
+
+Discuss your results.
+
+(5 points) Question 4: \n
+What are the disadvantages of the above methods. What would be a better approach to estimate the models? Hint: How were the sArima and exponential time series models determined in question 3?\n
+
+In general, SARIMA model has the disadvantage of only considering the linear relationship in the data. On other hand, ETS models has the disadvantage of "smoothing", which can lead to forecasting output might be lag of the actual time. \n
+
+Based on the resulting MAE, RMSE, and AICc, the better approach is to use SARIMA with sliding window. In general, SARIMA models performs better than ETS model in all MAE, RMSE, and AICc (especially in AICc), and within SARIMA models, sliding window performs better than expanding window in MAE, RMSE, and AICc (especially in AICc also). With these comparsion, we can conclude that SARIMA models have the advantage of forecasting (way lower AICc) and fitting the data (slightly lower RMSE and MAE). 
+
+
+
+

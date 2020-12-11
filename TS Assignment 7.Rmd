@@ -1,0 +1,144 @@
+---
+title: "TS Assignment 7"
+author: "Yunshuang Jiang"
+date: "11/16/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+(15 points) Question 1:
+Load the data and calculate the average cost of a night’s accommodation in Victoria each month (i.e. Cost variable).
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+library(fpp)
+library(tseries)
+library(ggplot2)
+library(forecast)
+library(vars)
+load("/Users/berryjiang/Downloads/motel.rda")
+cost = motel[,"Takings"]*1000/motel[,"Roomnights"]
+```
+
+a) Plot the CPI and Cost time series.
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+plot(cost, ylab="Cost", xlab="Year", main = "Cost Plot")
+plot(motel[,"CPI"], ylab="CPI", xlab="Year", main = "CPI")
+```
+
+
+b) Plot the Cost time series against the CPI time series and calculate the correlation between CPI and Cost.
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+plot(y=cost, x=motel[,"CPI"],ylab="cost", xlab="CPI", main = "Cost time series against the CPI time series")
+print(paste0("Correlation between CIP and Cost is: ", cor(motel[,"CPI"], cost)))
+```
+
+Discuss your results and explain why the logarithms of both variables need to be taken before fitting any models. \n
+
+Comment: The correlation between cost and CPI is too high, it is better to take log transform for both variable before fitting any models so that the variances are more stable. \n
+
+c) Plot the log(CPI) and log(Cost) time series and calculate the correlation between the logarithms of both CPI and Cost.
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+logcpi = log(motel[,"CPI"])
+logcost = log(cost)
+plot(logcost, ylab="log(Cost)", xlab="Year", main = "Log(Cost) Plot")
+plot(logcpi, ylab="Log(CPI)", xlab="Year", main = "Plog(CPI) Plot")
+print(paste0("Correlation between log(CIP) and log(Cost) is: ", cor(logcpi, logcost)))
+```
+
+
+(15 points) Question 2: \n
+a) Use the linear model with time series components function tslm() to fit a linear model to the log(Cost) time series as a function of the log(CPI) time series (i.e., CPI ➔ Independent variable, Cost➔ Dependent variable).
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+m1 = tslm(logcost~logcpi)
+m1
+```
+
+
+b) Plot log(CPI) against log(Cost) and the fitted trend.
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+plot(y=log(cost), x=logcpi,xlab="log(CPI)", ylab="log(cost)", main = "log(CPI) against log(Cost)")
+abline(m1)
+```
+
+
+c) Use the summary() function to summarize the generated model , and the checkresiduals() function to evaluate the residuals.
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+summary(m1)
+checkresiduals(m1)
+```
+
+
+Discuss your results. \n
+
+Comment: The Breusch-Godfrey test has a p-value of smaller than 0.05, which suggestion that we can reject the null hypothesis and conclude that there is still serial correlation in the time series. The checkresiduals() graphs also suggested that there are still correlation between the residuals as the residuals graph does not look like white noise and the ACF graph has obvious multiple lags. Therefore, this model does not perform well in terms of explaining the correlation between our time series. 
+
+
+(10 points) Question 3:
+Use the auto.arima() function to fit an appropriate regression model with ARIMA errors to the Cost and CPI time series(i.e., CPI ➔ Independent variable, Cost➔ Dependent variable). Set the Order of seasonaldifferencing argument, D, to 1 and the ‘lambda’ argument to 0 to reflect a logarithmic transformation.
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+mcpi = auto.arima(motel[,"CPI"], lambda = 0, D=1)
+m2 = auto.arima(cost, xreg = mcpi$fitted, lambda = 0, D=1)
+m2
+```
+
+a) Use the summary() function to summarize the generated model.
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+summary(m2)
+```
+
+b) Use the checkresiduals() function to evaluate the residuals.
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+checkresiduals(m2)
+```
+
+Discuss your results. \n
+
+Comment: The Ljung-Box test for the ARIMAX model generated here has a p-value = 0.3223, which is greater than 0.05. Therefore, we accept Null hypothesis and conclude that the time series is independently distributed. In addition, the residual plots looks more like a white noise as compare to the tslm model from Question 2, the ACF plot has nearly no significant lag. Therefore, we suggest that the ARIMAX model from Question 3 is a better model for this time series. \n
+
+
+(10 points) Question 4: \n
+a) Calculate and plot a naïve forecast of CPI for the next 18 months. \n
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+fcastcpi = forecast(mcpi, h=18)
+plot(fcastcpi, main = "Naive Forecast of CPI")
+```
+
+b) Forecast and plot the average price per room (i.e., Cost) for the next 18 months using the fitted model from Question 3 and the naïve forecast of CPI.\n 
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+fcast = forecast(m2, xreg = fcastcpi$mean,h=18)
+plot(fcast, main = "Forecast from M2-Question 3 and Naive forecast of CPI")
+```
+
+Discuss your results. \n 
+
+Comment: We used naive forecast to forecast CPI for the next 18 months, then use the mean of the naive forecast for CPI as input of xreg to forecast the cost of hotel for next 18 months. As shown in the graph, the prediction looks very reasonable. \n
+
+
+
+(10 points) Question 5: \n
+a) Use the VAR() function to fit a VAR(10) model to the log(Cost) and log(CPI) time series. Set the ‘type’ and ‘season’ arguments to 'both' and 12, respectively.
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+m3 = VAR(as.ts(data.frame(logcost = logcost, logcpi = logcpi)), p= 10, type = "both", season = 12)
+summary(m3)
+serial.test(m3)
+```
+
+b) Forecast and plot the average price per room (i.e., Cost) and CPI for the next 18 months using your fitted model.
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+autoplot(forecast(m3, h=18))
+```
+
+c) Plot the acf of residuals.
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+acf(residuals(m3))
+checkresiduals(m3$varresult$logcpi)
+checkresiduals(m3$varresult$logcost)
+```
+
+
+Discuss your results. \n
+
+Comment: The Portmanteau Test for the VAR model in this section has a p-value of 0.668, which is greater than the significant level of 0.05. It suggests that the null hypothesis of no autocorrelation cannot be rejected. In addition, the acf graphs of the residuals all looks like resemble of white noise, and the forecast plots look very reasonable. Therefore, we would conclude that this model is a valid model for our time series. \n
+

@@ -1,0 +1,153 @@
+---
+title: "TS Assignment 5"
+author: "Yunshuang Jiang"
+date: "11/3/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+library(stringr) 
+library(xts) 
+library(forecast) 
+library(fpp) 
+```
+
+(2 points) Question 1:
+Load the condmilk.rda dataset and split it into a training dataset (1971/1 – 1979/12) and a test dataset (1980/1 – 1980/12)
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+# Split the training and test sets
+traindat = window(condmilk, start = c(1971,1), end = c(1979,12)) 
+testdat = window(condmilk, start = c(1980,1), end = c(1980,12))
+```
+
+
+(3 points) Question 2:
+Plot the training dataset. Is Box-Cox transformation necessary for this data?
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+ts.plot(traindat, type = 'l', ylab='Condensed Milk',main="Manufacturer's Stocks of evaporated and sweetened condensed milk")
+
+# Try with different lambda
+par(mfrow=c(2,2)) 
+plot(BoxCox(traindat, lambda = 0), type = 'l', main = "Lambda = 0 - Natural Log Transformation")
+plot(BoxCox(traindat, lambda = 0.5), type = 'l', main = "Lambda = 0.5")
+plot(BoxCox(traindat, lambda = -0.5), type = 'l', main = "Lambda = -0.5")
+plot(BoxCox(traindat, lambda = 0.8), type = 'l', main = "Lambda = 0.8")
+BoxCox.lambda(traindat)
+```
+
+Automatic selection of Box Cox transformation parameter is -0.39. I plotted the training data with lambda equal to 0.5 and I do not see much difference between the original plot, the plot with other lambdas we tried, and lambda = -0.5. Therefore, box-cox transformation is not necessary to be applied to our training data.\n
+
+
+(5 points) Question 3:
+Is the training dataset stationary? If not, find an appropriate differencing which yields seasonal and trend stationary training dataset. Plot the ACF and PACF to determine if the detrended and deseasonalized time series is stationary.
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+tsdisplay(traindat, main='Original Train Data')
+traindatdiff4 <- diff(traindat,4)
+tsdisplay(traindatdiff4,main='4th Differences')
+traindatdiff12 <- diff(traindat,12)
+tsdisplay(traindatdiff12,main='12th Differences')
+
+```
+
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+#kpss test
+kpss.test(traindat)
+
+#Augmented Dickey-Fuller test
+adf.test(traindat)
+```
+
+
+Comment: Based on the graphs above, the training dataset is stationary. When perform the kpss test, the p-value = 0.1, which is not significant at 0.05 level. Therefore, we accept the null hypothesis and conclude that the process is stationary. When perform the Augmented Dickey-Fuller test, the p-value = 0.01, which is significant at 0.05 significant level. Therefore, we accept the alternative hypothesis and conclude that the process is stationary.
+
+
+(5 points) Question 4:
+Build two 𝐴𝑅𝐼𝑀𝐴(𝑝, 𝑑, 𝑞)(𝑃,𝑄,𝐷)𝑠 models using the training dataset and auto.arima() function.
+
+• Model 1: Let the auto.arima() function determine the best order of non-seasonal and seasonal differencing.
+
+• Model 2: Set the order of seasonal-differencing 𝑑 to 1 and 𝐷 to 1.
+
+Report the resulting 𝑝, 𝑑, 𝑞, 𝑃,𝐷,𝑄, 𝑠 and the coefficients values for all cases and compare their AICc andBIC values.
+
+```{r}
+#based on the plot, we know that there is seasonality in the data, thus we set seasonal = true
+#on the other hand, we do not see a obvious drift, thus we set allowdrift = false
+m1 = auto.arima(traindat, allowdrift= FALSE, trace = TRUE, seasonal = TRUE)
+m1
+```
+
+```{r}
+m2 = Arima(traindat,order=c(1,1,0),seasonal=list(order=c(2,1,0),period=12))
+m2
+```
+
+For Model 1: the best model is ARIMA(1,0,0)(2,1,0)[12], with ar1 = 0.7625, sar1 = -0.7745, sar2 = -0.5032. 
+For Model 2: ARIMA(1,1,0)(2,1,0)[12], with ar1 = -0.1474, sar1 = -0.7588, sar2 = -0.4959. 
+For Model 1: AIC=765.67, AICc=766.11, BIC=775.93.
+For Model 2: AIC=767.23   AICc=767.68   BIC=777.45.
+By comparing AIC, AICc, and BIC, model 1 using auto.arima() function is the preferrable model. 
+
+
+
+(5 points) Question 5:
+Plot the residuals ACF of both models from part 4 and use the Ljung-Box Test with lag 12 to verify your conclusion.
+```{r}
+residual <-window(m1$residuals)
+checkresiduals(residual)
+Box.test(residual, type =  "Ljung-Box", lag = 12) 
+```
+
+```{r}
+residual2 <-window(m2$residuals)
+checkresiduals(residual2)
+Box.test(residual2, type =  "Ljung-Box", lag = 12) 
+```
+
+Comment: the residual plot shows that most of the residuals are contered around 0, with one residual (at around mid-late 1973) has a relatively larger residual. The ACF graph does not have any obvious significant lag. The count residual histogram look slightly left tailed. Overview, the residuals plots look pretty good. The Ljung Box test with lag of 12 gives a p-value of 0.1751, which is greater than 0.05. Therefore, we can accept null hypothesis and conclude that the time series is independently distributed. \n
+
+(5 points) Question 6:
+Use both models from part 4 and the h-period argument in the forecast() function to forecast each month of 1980 (i.e., Jan, Feb, …, Dec.) Plot the test dataset and forecasted values.
+```{r}
+library(ggplot2)
+h = 12
+m1_forecast <-forecast(m1, h, level=c(50, 95))
+
+autoplot(condmilk) +
+  autolayer(m1_forecast, series="SARIMA")+
+  # autolayer(Model_Arima_forecast$mean, series="SARIMA")+
+  ggtitle("Forecasts M1") +
+  xlab("Year") + ylab("Condensed Milk")
+```
+
+```{r}
+library(ggplot2)
+h = 12
+m2_forecast <-forecast(m2, h, level=c(50, 95))
+
+autoplot(condmilk) +
+  autolayer(m2_forecast, series="SARIMA")+
+  # autolayer(Model_Arima_forecast$mean, series="SARIMA")+
+  ggtitle("Forecasts M2") +
+  xlab("Year") + ylab("Condensed Milk")
+```
+
+(5 points) Question 7:
+Compare the forecast with the actual test data by calculating the Mean Absolute Percentage Error (MAPE) and Mean Squared Error (MSE). Which model is better to forecast the Manufacturer's Stocks for each month of 1980 (i.e., Jan, Feb, …, Dec)?
+```{r}
+accuracy(m1_forecast, testdat)
+m2_forecast <-forecast(m2, h, level=c(50, 95))
+accuracy(m2_forecast, testdat)
+m1_mse = sum((m1_forecast$mean - testdat) ^2)
+m2_mse = sum((m2_forecast$mean - testdat) ^2)
+c(m1_mse,m2_mse)
+```
+
+The MAPE for test set for M1 is 18.42871 and for M2 is 19.857210. The calculated MSE for M1 is 3714.414 and for M2 is 4319.655. Overall, the scores are very similarly with M1 having a slightly smaller MAPE and MSE for test set. By comparing the score for training and test set, we can see that M1 performs better. Since the scores are similar, we should go for a simpler model M1. 
+
+
+

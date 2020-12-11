@@ -1,0 +1,182 @@
+---
+title: "TS Assignment 4"
+author: "Yunshuang Jiang"
+date: "10/30/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+library(stringr) 
+library(xts) 
+library(forecast) 
+library(fpp) 
+```
+
+
+(2 points) Question 1:
+Combine the data from the 16 files into a single dataset and plot it.
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+library(readxl)
+files <- list.files(path = "~/Downloads/Traffic Flow Data", pattern = "*.xls", full.names = T)
+tbl <- sapply(files, read_excel, simplify=FALSE)
+
+#we only want column 5 and row 5-28
+dat = c()
+for (i in c(2:16,1)){
+  current = as.numeric(tbl[i][[1]][[5]][5:28])
+  dat = append(dat, current)
+}
+
+#create a time index
+time_index <- seq(from = as.POSIXct("2013-06-16 01:00"),
+             to = as.POSIXct("2013-07-02 00:00"), by = "hour")
+
+#make time series data
+dat <- xts(dat, order.by = time_index)
+
+
+#plot data
+plot(dat, main = 'Traffic Flow Data Graph')
+```
+\n
+\n
+\n
+\n
+
+(3 points) Question 2:
+Split the dataset into a training dataset which includes 6/16/2013 - 6/30/2013 samples and a test dataset which includes 7/1/2013 samples. Plot the ACF and PACF, and apply the Augmented Dickey-Fuller Test to check if the training dataset is stationary.
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+#split data
+train <- dat[1:(24*15-1)]
+test <- dat[(24*15):384] 
+
+#plot ACF and PACF
+tsdisplay(train, main='Traffic Flow Train')
+tsdisplay(test, main='Traffic Flow Test')
+
+#apply Augmented Dickey-Fuller test
+adf.test(train)
+```
+
+Comment: Based on the graphs above, the training dataset is stationary. When perform the Augmented Dickey-Fuller test, the p-value = 0.01, which is significant at 0.05 significant level. Therefore, we reject the null hypothesis and conclude that the process is stationary.
+\n
+\n
+\n
+\n
+
+
+(10 points) Question 3:
+Build an 𝐴𝑅𝐼𝑀𝐴(𝑝, 𝑑, 𝑞) model using the training dataset and R auto.arima() function. Change the values of 𝑝 and 𝑞 and determine the best model using AICc and BIC values. Do AICc and BIC select the same model as the best model? For each derived model, review the residual plots for the residuals ACF and normality.
+```{r}
+#using auto.arima with no seasonality, no drift, and trace = true
+m1 <- auto.arima(train, allowdrift= FALSE, trace = TRUE, seasonal = FALSE)
+```
+
+```{r}
+#trying other p and q values
+m2 <- Arima(train, c(1,0,3)) 
+m3 <- Arima(train, c(2,0,2)) 
+m4 <- Arima(train, c(3,0,4))
+m5 <- Arima(train, c(4,0,4))
+
+aic_bic <- data.frame(model = 1:5, 
+                      aic = c(m1$aic, m2$aic, m3$aic, m4$aic, m5$aic), 
+                      bic = c(m1$bic, m2$bic, m3$bic, m4$bic, m5$bic))
+
+aic_bic
+```
+
+Comment: Based on the lowest AIC value, model 1 is the most perferable model. However, based on the lowest BIC value, model 3 is the most preferable model. Thus, AIC and BIC provide different suggestion on the most preferable model. 
+
+\n 
+\n
+\n
+\n
+\n
+
+```{r}
+#plot residual plots
+checkresiduals(m1)
+checkresiduals(m2)
+checkresiduals(m3)
+checkresiduals(m4)
+checkresiduals(m5)
+```
+
+
+Comment: All the Ljung-Box tests have significant p-values, significant p-values in this test rejects the null hypothesis that the time series isn’t autocorrelated. All the residual plots have similar pattern: the residual from forecasting plots are fluctuating around 0 with one peak. The count of residuals plots all look normally distributed, and the ACF graphs shows lack of correlation for most of the lacks besides around lack 25.Overall,  the plots suggest that the forecast did a seasonable job. 
+
+\n
+\n
+\n
+\n
+\n
+
+(10 points) Question 4:
+Build a day of the week seasonal 𝐴𝑅𝐼𝑀𝐴(𝑝, 𝑑, 𝑞)(𝑃, 𝑄,𝐷)𝑠 model using the training dataset and R auto.arima() function.
+```{r, error=FALSE, warning=FALSE, message = FALSE}
+# hourly data with weekly frequency is 168
+weekm <- auto.arima(ts(train, frequency = 168), trace = TRUE, seasonal = TRUE)
+
+```
+
+\n
+\n
+\n
+\n
+\n
+
+(10 points) Question 5:
+Use the 𝐴𝑅𝐼𝑀𝐴(𝑝, 𝑑, 𝑞)(𝑃,𝑄, 𝐷)𝑠 model from Question 4 to forecast for July 1st (which is a Monday). Plot your result.
+```{r}
+week_forecast <- forecast(weekm, h=24)
+plot(week_forecast, main = 'Day of the Week Seasonal Model Forecast')
+```
+
+\n
+\n
+\n
+\n
+\n
+
+(10 points) Question 6:
+Build a hour of the day seasonal 𝐴𝑅𝐼𝑀𝐴(𝑝, 𝑑, 𝑞)(𝑃,𝑄, 𝐷)𝑠model using the training dataset and R auto.arima() function.
+```{r}
+# hourly data with daily frequency is 24
+daym <- auto.arima(ts(train, frequency = 24), trace = TRUE, seasonal = TRUE)
+```
+
+\n
+\n
+\n
+\n
+\n
+
+(10 points) Question 7:
+Use the 𝐴𝑅𝐼𝑀𝐴(𝑝, 𝑑, 𝑞)(𝑃,𝑄, 𝐷)𝑠 model from Question 6 to forecast for July 1st (which is a Monday). Plot your result.
+```{r}
+day_forecast <- forecast(daym, h=24)
+plot(day_forecast, main = 'Hour of the Day Seasonal Model Forecast')
+```
+
+\n
+\n
+\n
+\n
+\n
+
+(5 points) Question 8:
+Compare the forecast of the models from Questions 5 and 7 for July 1 8:00, 9:00, 17:00 and 18:00, which model is better (Questions 4 or 6)?
+
+```{r}
+week_sse = sum((week_forecast$mean[c(9,10,18,19)] - as.numeric(test[,1][c(9,10,18,19)]))^2)
+day_sse = sum((day_forecast$mean[c(9,10,18,19)] - as.numeric(test[,1][c(9,10,18,19)]))^2)
+print(paste0("Day of the Week Seasonal Model's SSE is ", round(week_sse,2)))
+print(paste0("Hour of the Day Seasonal Model's SSE is ", round(day_sse,2)))
+```
+
+Comment: Based on the SSE, Day of the week seasonal model (question 4, ARIMA(0,1,2)(0,1,0)[168]) is the better model as it has a smaller SSE. 

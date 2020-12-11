@@ -1,0 +1,252 @@
+---
+title: "TS Assignment 3"
+author: "Yunshuang Jiang"
+date: "10/25/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+(1 points) Question 1:\n
+Load the usgdp.rda dataset and split it into a training dataset (1947Q1 - 2005Q1) and a test dataset (2005Q2 - 2006Q1)
+
+```{r, warning=FALSE}
+library(tseries)
+library(ggplot2)
+library(forecast)
+library(fpp)
+library(TSA)
+usgdp <- window(usgdp)
+```
+
+```{r, warning=FALSE}
+# Split the training and test sets
+traindat = window(usgdp, start = c(1947,1), end = c(2005,1)) 
+testdat = window(usgdp, start = c(2005,2), end = c(2006,1))
+```
+
+
+(5 points) Question 2:\n
+Plot the training dataset. Is the Box-Cox transformation necessary for this data?
+
+```{r, warning=FALSE}
+ts.plot(traindat, type = 'l')
+```
+
+```{r, warning=FALSE}
+# Try with different lambda
+par(mfrow=c(2,2)) 
+plot(BoxCox(traindat, lambda = 0), type = 'l', main = "Lambda = 0")
+plot(BoxCox(traindat, lambda = 0.3), type = 'l', main = "Lambda = 0.3")
+plot(BoxCox(traindat, lambda = 0.5), type = 'l', main = "Lambda = 0.5")
+plot(BoxCox(traindat, lambda = 0.8), type = 'l', main = "Lambda = 0.8")
+```
+
+```{r, warning=FALSE}
+BoxCox.lambda(traindat)
+```
+
+We can see that the variation are very similar for all the levels of lambda we ploted above, therefore, box-cox transformation is not necessary to be applied to our training data.\n
+
+
+(5 points) Question 3:\n
+Plot the 1st and 2nd order difference of the data. Apply KPSS Test for Stationarity to determine which difference order results in a stationary dataset.
+
+```{r, warning=FALSE}
+par(mfrow=c(2,1)) 
+plot(diff(traindat, differences = 1), main = "1st order difference")
+plot(diff(traindat, differences = 2), main = "2nd order difference")
+```
+
+```{r, warning=FALSE}
+# KPSS Test
+kpss.test(diff(traindat, differences = 1))
+kpss.test(diff(traindat, differences = 2))
+```
+
+Based on the plot and KPSS test, the difference of order 2 results in a stationary dataset. \n
+
+
+(5 points) Question 4:\n
+Fit a suitable ARIMA model to the training dataset using the auto.arima() function. Remember to transform the data first if necessary. Report the resulting 𝑝, 𝑑, 𝑞 and the coefficients values.
+
+```{r, warning=FALSE}
+(auto = auto.arima(traindat))
+```
+
+The auto Arima resulting model has p = 2, d = 2, q = 2. \n
+
+(5 points) Question 5:\n
+Compute the sample Extended ACF (EACF) and use the Arima() function to try some other plausible models by experimenting with the orders chosen. Limit your models to 𝑞, 𝑝 ≤ 2 and 𝑑 ≤ 2. Use the model summary() function to compare the Corrected Akaike information criterion (i.e., AICc) values (Note: Smaller values indicated better models).
+
+```{r, warning=FALSE}
+#' @export 
+eacf <-
+function (z,ar.max=7,ma.max=13) 
+{
+#
+#  PROGRAMMED BY K.S. CHAN, DEPARTMENT OF STATISTICS AND ACTUARIAL SCIENCE,
+#  UNIVERSITY OF IOWA.
+#
+#  DATE: 4/2001
+#  Compute the extended sample acf (ESACF) for the time series stored in z.
+#  The matrix of ESACF with the AR order up to ar.max and the MA order
+#  up to ma.max is stored in the matrix EACFM.
+#  The default values for NAR and NMA are 7 and 13 respectively.
+#  Side effect of the eacf function:
+#  The function prints a coded ESACF table with
+#  significant values denoted by * and nosignificant values by 0, significance
+#  level being 5%.
+#
+#  Output:
+#	eacf=matrix of esacf
+#	symbol=matrix of coded esacf
+#
+
+lag1<-function(z,lag=1){c(rep(NA,lag),z[1:(length(z)-lag)])}
+reupm<-function(m1,nrow,ncol){
+k<-ncol-1
+m2<-NULL
+for (i in 1:k){
+i1<-i+1
+work<-lag1(m1[,i])
+work[1]<--1
+temp<-m1[,i1]-work*m1[i1,i1]/m1[i,i]
+temp[i1]<-0
+m2<-cbind(m2,temp)
+}
+m2}
+ceascf<-function(m,cov1,nar,ncol,count,ncov,z,zm){
+result<-0*seq(1,nar+1)
+result[1]<-cov1[ncov+count]
+for (i in 1:nar) {
+temp<-cbind(z[-(1:i)],zm[-(1:i),1:i])%*%c(1,-m[1:i,i])
+result[i+1]<-acf(temp,plot=FALSE,lag.max=count,drop.lag.0=FALSE)$acf[count+1]
+}
+result
+}
+
+ar.max<-ar.max+1
+ma.max<-ma.max+1
+nar<-ar.max-1
+nma<-ma.max
+ncov<-nar+nma+2
+nrow<-nar+nma+1
+ncol<-nrow-1
+z<-z-mean(z)
+zm<-NULL
+for(i in 1:nar) zm<-cbind(zm,lag1(z,lag=i))
+cov1<-acf(z,lag.max=ncov,plot=FALSE,drop.lag.0=FALSE)$acf
+cov1<-c(rev(cov1[-1]),cov1)
+ncov<-ncov+1
+m1<-matrix(0,ncol=ncol,nrow=nrow)
+for(i in 1:ncol) m1[1:i,i]<-
+ar.ols(z,order.max=i,aic=FALSE,demean=FALSE,intercept=FALSE)$ar
+eacfm<-NULL
+for (i in 1:nma) {
+m2<-reupm(m1=m1,nrow=nrow,ncol=ncol)
+ncol<-ncol-1
+eacfm<-cbind(eacfm, ceascf(m2,cov1,nar,ncol,i,ncov,z,zm))
+m1<-m2}
+work<-1:(nar+1)
+work<-length(z)-work+1
+symbol<-NULL
+for ( i in 1:nma) {
+work<-work-1
+symbol<-cbind(symbol,ifelse(abs(eacfm[,i])>2/work^.5, 'x','o'))}
+rownames(symbol)<-0:(ar.max-1)
+colnames(symbol)<-0:(ma.max-1)
+cat('AR/MA\n')
+print(symbol,quote=FALSE)
+invisible(list(eacf=eacfm,ar.max=ar.max,ma.ma=ma.max,symbol=symbol))
+}
+
+```
+
+
+```{r, warning=FALSE}
+eacf(traindat)
+```
+
+```{r, warning=FALSE}
+#try different models 
+m1 = arima(traindat, order = c(1,1,1))
+m1
+```
+
+```{r, warning=FALSE}
+m2 = arima(traindat, order = c(1,2,1))
+m2
+```
+
+```{r, warning=FALSE}
+m3 = arima(traindat, order = c(2,1,2))
+m3
+```
+
+```{r, warning=FALSE}
+m4 = arima(traindat, order = c(2,2,2))
+m4
+```
+
+Based on AIC, the 4th model is the best model. \n
+
+
+(5 points) Question 6:\n
+Use the model chosen in Question 4 to forecast and plot the GDP forecasts with 80 and 95 % confidence levels for 2005Q2 - 2006Q1 (Test Period).
+
+```{r, warning=FALSE}
+# 80% confidence level
+fore1 = forecast(auto, level = 80)
+plot(forecast(auto,  level = 80), main = "Forecasts with 80% confidence level")
+
+```
+
+
+```{r, warning=FALSE}
+# 95% confidence level
+fore2 = forecast(auto, level = 95)
+plot(forecast(auto, level = 95), main = "Forecasts with 95% confidence level")
+```
+
+
+(5 points) Question 7:\n
+Compare your forecasts with the actual values using error = actual - estimate and plot the errors. (Note: Use the forecast $mean element for the forecast estimate)
+
+```{r, warning=FALSE}
+checkresiduals(auto)
+```
+
+```{r, warning=FALSE}
+# 80% confidence level
+error1 = testdat - fore1$mean
+error1
+plot(error1, main = "Error plot for 80% confidence level")
+```
+
+```{r, warning=FALSE}
+# For 95% confidence level
+error2 = testdat - fore2$mean
+error2
+plot(error2, main = "Error plot for 80% confidence level")
+```
+
+
+(5 points) Question 8:\n
+Calculate the sum of squared error.
+
+```{r, warning=FALSE}
+# For 80% confidence level
+sumsquared1 = sum((testdat-fore1$mean)^2)
+sumsquared1
+```
+
+```{r, warning=FALSE}
+# For 95% confidence level
+sumsquared2 = sum((testdat-fore2$mean)^2)
+sumsquared2
+```
+
+
